@@ -79,7 +79,9 @@ dns:
   ratelimit_whitelist: []
   refuse_any: true
   bootstrap_dns:
-  - 1.1.1.1
+  - 223.5.5.5
+  - 101.101.101.101
+  - 114.114.114.114
   all_servers: true
   allowed_clients: []
   disallowed_clients: []
@@ -90,7 +92,9 @@ dns:
   safebrowsing_enabled: false
   resolveraddress: ""
   upstream_dns:
-  - 1.1.1.1
+  - 223.5.5.5
+  - 101.101.101.101
+  - 114.114.114.114
 tls:
   enabled: false
   server_name: ""
@@ -100,22 +104,7 @@ tls:
   certificate_chain: ""
   private_key: ""
 filters:
-- enabled: true
-  url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
-  name: AdGuard Simplified Domain Names filter
-  id: 1
-- enabled: true
-  url: https://adaway.org/hosts.txt
-  name: AdAway
-  id: 2
-- enabled: true
-  url: https://hosts-file.net/ad_servers.txt
-  name: hpHosts - Ad and Tracking servers only
-  id: 3
-- enabled: true
-  url: https://www.malwaredomainlist.com/hostslist/hosts.txt
-  name: MalwareDomainList.com Hosts List
-  id: 4
+
 user_rules: []
 dhcp:
   enabled: false
@@ -138,8 +127,8 @@ fi
 
 dl_adg(){
 logger -t "AdGuardHome" "下载AdGuardHome"
-#wget --no-check-certificate -O /tmp/AdGuardHome.tar.gz https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.101.0/AdGuardHome_linux_mipsle.tar.gz
-curl -k -s -o /tmp/AdGuardHome/AdGuardHome --connect-timeout 10 --retry 3 https://cdn.jsdelivr.net/gh/chongshengB/rt-n56u/trunk/user/adguardhome/AdGuardHome
+#wget --no-check-certificate -O /tmp/AdGuardHome.tar.gz https://github.com/padavanmaker/DNSPadavan/blob/main/trunk/user/adguardhome/AdGuardHome_linux_mipsle.tar.gz?raw=true
+curl -k -s -o /tmp/AdGuardHome/AdGuardHome --connect-timeout 10 --retry 3 https://github.com/padavanmaker/DNSPadavan/blob/main/trunk/user/adguardhome/AdGuardHome?raw=true
 if [ ! -f "/tmp/AdGuardHome/AdGuardHome" ]; then
 logger -t "AdGuardHome" "AdGuardHome下载失败，请检查是否能正常访问github!程序将退出。"
 nvram set adg_enable=0
