@@ -1,0 +1,45 @@
+name: Padavan MI-R3P
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses-dev libltdl-dev wget
+
+      - name: Clone source
+        run: |
+          git clone --depth=1 https://github.com/chongshengB/rt-n56u.git padavan
+          echo "SRC_DIR=$GITHUB_WORKSPACE/padavan" >> $GITHUB_ENV
+
+      - name: Download toolchain
+        run: |
+          cd $SRC_DIR/toolchain-mipsel
+          sh dl_toolchain.sh
+          test -d toolchain-3.4.x || { echo "toolchain download failed"; exit 1; }
+
+      - name: Build firmware
+        run: |
+          cd $SRC_DIR/trunk
+          cp -f configs/templates/MI-R3P.config .config
+          sed -i "s|^CONFIG_TOOLCHAIN_DIR=.*$|CONFIG_TOOLCHAIN_DIR=$SRC_DIR/toolchain-mipsel|" .config
+          sudo ./clear_tree_simple
+          sudo ./build_firmware_modify MI-R3P
+          sudo mv -f images/*.trx $GITHUB_WORKSPACE/
+          sudo chmod 644 $GITHUB_WORKSPACE/*.trx
+          ls -lh $GITHUB_WORKSPACE/*.trx
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: padavan-MI-R3P
+          path: ${{ github.workspace }}/*.trx
+          if-no-files-found: error
+          retention-days: 14
