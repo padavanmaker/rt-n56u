@@ -16,7 +16,7 @@ jobs:
 
       - name: Clone source
         run: |
-          git clone --depth=1 https://github.com/chongshengB/rt-n56u.git padavan
+          git clone --depth=1 https://github.com/vb1980/Padavan-KVR
           echo "SRC_DIR=$GITHUB_WORKSPACE/padavan" >> $GITHUB_ENV
 
       - name: Download toolchain
