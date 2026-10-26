@@ -1,15 +1,18 @@
 name: Padavan MI-R3P
 
-# 手动触发：Actions -> Padavan MI-R3P -> Run workflow
+# Usage: save as .github/workflows/padavan-mi-r3p.yml
+# Trigger: Actions -> Padavan MI-R3P -> Run workflow
+# Note: keep the indentation inside every run: | block exactly as is
+
 on:
   workflow_dispatch:
     inputs:
       model:
-        description: "机型模板名（trunk/configs/templates 下的文件名，不含 .config）"
+        description: "template name under trunk/configs/templates, without .config"
         default: "MI-R3P"
         required: true
       source:
-        description: "Padavan 源码地址（需带 .git）"
+        description: "padavan source repo url (with .git)"
         default: "https://github.com/vb1980/Padavan-KVR.git"
         required: true
 
@@ -21,40 +24,34 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
-            fakeroot kmod cpio git python3-docutils gettext automake autopoint texinfo \
-            build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev \
-            libncurses-dev libltdl-dev wget libc-dev-bin rsync bzip2
+          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot kmod cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses-dev libltdl-dev wget libc-dev-bin rsync bzip2
 
-      # 关键修正 1：clone 到明确目录名 padavan，SRC_DIR 与之一致
       - name: Clone source
         run: |
           git clone --depth=1 "${{ inputs.source }}" "$GITHUB_WORKSPACE/padavan"
           echo "SRC_DIR=$GITHUB_WORKSPACE/padavan" >> "$GITHUB_ENV"
 
-      # toolchain 落在 toolchain-mipsel/toolchain-3.4.x（与 toolchain.inc 里的
-      # CONFIG_TOOLCHAIN_DIR=${ROOTDIR}/../toolchain-mipsel 对应）
       - name: Download toolchain
         run: |
           cd "$SRC_DIR/toolchain-mipsel"
           sh dl_toolchain.sh
           test -x toolchain-3.4.x/bin/mipsel-linux-gcc || {
-            echo "::error::toolchain 下载或解压失败"; ls -l; exit 1;
+            echo "::error::toolchain download or extract failed"
+            ls -l
+            exit 1
           }
 
       - name: Configure
         run: |
           cd "$SRC_DIR/trunk"
           test -f "configs/templates/${{ inputs.model }}.config" || {
-            echo "::error::模板 configs/templates/${{ inputs.model }}.config 不存在"; exit 1;
+            echo "::error::template configs/templates/${{ inputs.model }}.config not found"
+            exit 1
           }
           cp -f "configs/templates/${{ inputs.model }}.config" .config
-          # 模板里写死了 vb1980 自己的 /opt/rt-n56u 绝对路径，这里改成当前路径
           sed -i "s|^CONFIG_TOOLCHAIN_DIR=.*$|CONFIG_TOOLCHAIN_DIR=${SRC_DIR}/toolchain-mipsel|" .config
           grep -n "^CONFIG_FIRMWARE_PRODUCT_ID" .config
 
-      # 关键修正 2：clear_tree_simple 与 build_firmware_modify 必须是两条命令
-      # 关键修正 3：用 fakeroot（脚本内部检查 EUID==0），比 sudo 更干净
       - name: Build firmware
         run: |
           cd "$SRC_DIR/trunk"
