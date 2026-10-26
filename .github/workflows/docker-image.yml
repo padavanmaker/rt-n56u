@@ -1,60 +1,77 @@
-name: Padavan MI-R3P02
+name: Padavan MI-R3P
+
+# Usage: save as .github/workflows/padavan-mi-r3p.yml
+# Trigger: Actions -> Padavan MI-R3P -> Run workflow
+# Note: keep the indentation inside every run: | block exactly as is
 
 on:
   workflow_dispatch:
+    inputs:
+      model:
+        description: "template name under trunk/configs/templates, without .config"
+        default: "MI-R3P"
+        required: true
+      source:
+        description: "padavan source repo url (with .git)"
+        default: "https://github.com/vb1980/Padavan-KVR.git"
+        required: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
-
     steps:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses-dev libltdl-dev wget
+          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot kmod cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses-dev libltdl-dev wget libc-dev-bin rsync bzip2
 
-      - name: Clone source to /opt/rt-n56u
+      - name: Clone source
         run: |
-          sudo git clone --depth=1 https://github.com/chongshengB/rt-n56u.git /opt/rt-n56u
+          git clone --depth=1 "${{ inputs.source }}" "$GITHUB_WORKSPACE/padavan"
+          echo "SRC_DIR=$GITHUB_WORKSPACE/padavan" >> "$GITHUB_ENV"
 
       - name: Download toolchain
         run: |
-          cd /opt/rt-n56u/toolchain-mipsel
-          sudo sh dl_toolchain.sh
-          sudo mkdir -p /opt/rt-n56u/toolchain-mipsel/tmp
-          test -d toolchain-3.4.x || { echo "toolchain download failed"; exit 1; }
-          ls toolchain-3.4.x/bin/ | head -5
+          cd "$SRC_DIR/toolchain-mipsel"
+          sh dl_toolchain.sh
+          test -x toolchain-3.4.x/bin/mipsel-linux-gcc || {
+            echo "::error::toolchain download or extract failed"
+            ls -l
+            exit 1
+          }
 
-      - name: Fix dead go mirror
+      - name: Configure
         run: |
-          sudo sed -i 's|https://gomirrors.org/dl/go|https://dl.google.com/go|' /opt/rt-n56u/trunk/tools/Makefile
-          grep -n "dl.google.com" /opt/rt-n56u/trunk/tools/Makefile
+          cd "$SRC_DIR/trunk"
+          test -f "configs/templates/${{ inputs.model }}.config" || {
+            echo "::error::template configs/templates/${{ inputs.model }}.config not found"
+            exit 1
+          }
+          cp -f "configs/templates/${{ inputs.model }}.config" .config
+          sed -i "s|^CONFIG_TOOLCHAIN_DIR=.*$|CONFIG_TOOLCHAIN_DIR=${SRC_DIR}/toolchain-mipsel|" .config
+          grep -n "^CONFIG_FIRMWARE_PRODUCT_ID" .config
 
       - name: Build firmware
         run: |
-          cd /opt/rt-n56u/trunk
-          sudo ./clear_tree_simple
-          sudo ./build_firmware_modify MI-R3P
-          ls -lh images/ || true
-          sudo mv -f images/*.trx $GITHUB_WORKSPACE/
-          sudo chmod 644 $GITHUB_WORKSPACE/*.trx
-          echo "=== FIRMWARE READY ==="
-          ls -lh $GITHUB_WORKSPACE/*.trx
+          cd "$SRC_DIR/trunk"
+          ./clear_tree_simple
+          fakeroot ./build_firmware_modify "${{ inputs.model }}"
+          ls -lh images/
+
+      - name: Collect firmware
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          mv "$SRC_DIR"/trunk/images/*.trx "$GITHUB_WORKSPACE/out/"
+          cd "$GITHUB_WORKSPACE/out"
+          for f in *.trx; do mv -f "$f" "${f%.trx}_$(date +%Y%m%d).trx"; done
+          md5sum *.trx
+          ls -lh
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: padavan-MI-R3P
-          path: ${{ github.workspace }}/*.trx
-          if-no-files-found: error
-          retention-days: 14
-          ls -lh $GITHUB_WORKSPACE/*.trx
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: padavan-MI-R3P
-          path: ${{ github.workspace }}/*.trx
+          name: padavan-${{ inputs.model }}
+          path: ${{ github.workspace }}/out/*.trx
           if-no-files-found: error
           retention-days: 14
