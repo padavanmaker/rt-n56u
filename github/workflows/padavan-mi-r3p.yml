@@ -1,46 +1,80 @@
 name: Padavan MI-R3P
 
+# 手动触发：Actions -> Padavan MI-R3P -> Run workflow
 on:
   workflow_dispatch:
+    inputs:
+      model:
+        description: "机型模板名（trunk/configs/templates 下的文件名，不含 .config）"
+        default: "MI-R3P"
+        required: true
+      source:
+        description: "Padavan 源码地址（需带 .git）"
+        default: "https://github.com/vb1980/Padavan-KVR.git"
+        required: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
-
     steps:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses-dev libltdl-dev wget
+          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
+            fakeroot kmod cpio git python3-docutils gettext automake autopoint texinfo \
+            build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev \
+            libncurses-dev libltdl-dev wget libc-dev-bin rsync bzip2
 
+      # 关键修正 1：clone 到明确目录名 padavan，SRC_DIR 与之一致
       - name: Clone source
         run: |
-          git clone --depth=1 https://github.com/vb1980/Padavan-KVR
-          echo "SRC_DIR=$GITHUB_WORKSPACE/padavan" >> $GITHUB_ENV
+          git clone --depth=1 "${{ inputs.source }}" "$GITHUB_WORKSPACE/padavan"
+          echo "SRC_DIR=$GITHUB_WORKSPACE/padavan" >> "$GITHUB_ENV"
 
+      # toolchain 落在 toolchain-mipsel/toolchain-3.4.x（与 toolchain.inc 里的
+      # CONFIG_TOOLCHAIN_DIR=${ROOTDIR}/../toolchain-mipsel 对应）
       - name: Download toolchain
         run: |
-          cd $SRC_DIR/toolchain-mipsel
+          cd "$SRC_DIR/toolchain-mipsel"
           sh dl_toolchain.sh
-          test -d toolchain-3.4.x || { echo "toolchain download failed"; exit 1; }
+          test -x toolchain-3.4.x/bin/mipsel-linux-gcc || {
+            echo "::error::toolchain 下载或解压失败"; ls -l; exit 1;
+          }
 
+      - name: Configure
+        run: |
+          cd "$SRC_DIR/trunk"
+          test -f "configs/templates/${{ inputs.model }}.config" || {
+            echo "::error::模板 configs/templates/${{ inputs.model }}.config 不存在"; exit 1;
+          }
+          cp -f "configs/templates/${{ inputs.model }}.config" .config
+          # 模板里写死了 vb1980 自己的 /opt/rt-n56u 绝对路径，这里改成当前路径
+          sed -i "s|^CONFIG_TOOLCHAIN_DIR=.*$|CONFIG_TOOLCHAIN_DIR=${SRC_DIR}/toolchain-mipsel|" .config
+          grep -n "^CONFIG_FIRMWARE_PRODUCT_ID" .config
+
+      # 关键修正 2：clear_tree_simple 与 build_firmware_modify 必须是两条命令
+      # 关键修正 3：用 fakeroot（脚本内部检查 EUID==0），比 sudo 更干净
       - name: Build firmware
         run: |
-          cd $SRC_DIR/trunk
-          cp -f configs/templates/MI-R3P.config .config
-          sed -i "s|^CONFIG_TOOLCHAIN_DIR=.*$|CONFIG_TOOLCHAIN_DIR=$SRC_DIR/toolchain-mipsel|" .config
-          sudo ./clear_tree_simple
-          sudo ./build_firmware_modify MI-R3P
-          sudo mv -f images/*.trx $GITHUB_WORKSPACE/
-          sudo chmod 644 $GITHUB_WORKSPACE/*.trx
-          ls -lh $GITHUB_WORKSPACE/*.trx
+          cd "$SRC_DIR/trunk"
+          ./clear_tree_simple
+          fakeroot ./build_firmware_modify "${{ inputs.model }}"
+          ls -lh images/
+
+      - name: Collect firmware
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          mv "$SRC_DIR"/trunk/images/*.trx "$GITHUB_WORKSPACE/out/"
+          cd "$GITHUB_WORKSPACE/out"
+          for f in *.trx; do mv -f "$f" "${f%.trx}_$(date +%Y%m%d).trx"; done
+          md5sum *.trx
+          ls -lh
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: padavan-MI-R3P
-          path: ${{ github.workspace }}/*.trx
+          name: padavan-${{ inputs.model }}
+          path: ${{ github.workspace }}/out/*.trx
           if-no-files-found: error
           retention-days: 14
-
